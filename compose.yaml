@@ -1,0 +1,120 @@
+x-api-environment: &api-environment
+  APP_ENV: production
+  PUBLIC_ORIGIN: https://${SITE_DOMAIN:?Set SITE_DOMAIN}
+  DATABASE_URL: postgresql+psycopg://blueeye_app:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD}@postgres:5432/blueeye
+  REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379/0
+  SIGNING_SECRET: ${SIGNING_SECRET:?Set SIGNING_SECRET}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_SENDER: ${SMTP_SENDER:-info@blueeyemedia.in}
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+  NOTIFICATION_RECIPIENT: ${NOTIFICATION_RECIPIENT:-info@blueeyemedia.in}
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: blueeye
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d blueeye']
+      interval: 5s
+      retries: 10
+    mem_limit: 1g
+    networks: [private]
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    command:
+      - sh
+      - -c
+      - 'printf "bind 0.0.0.0\nprotected-mode yes\nrequirepass %s\nmaxmemory 128mb\nmaxmemory-policy noeviction\nsave \"\"\n" "$$REDIS_PASSWORD" > /tmp/redis.conf; exec redis-server /tmp/redis.conf'
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      retries: 10
+    mem_limit: 256m
+    networks: [private]
+  init-db:
+    build:
+      context: .
+      target: api
+    environment:
+      <<: *api-environment
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/blueeye
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    command: [python, -m, backend.bootstrap]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [private]
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment: *api-environment
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; r=urllib.request.Request('http://localhost:8000/health/ready',headers={'Host':'${SITE_DOMAIN}'}); urllib.request.urlopen(r,timeout=5)"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+    networks: [private]
+  worker:
+    profiles: [notifications]
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment: *api-environment
+    command: [python, -m, backend.worker]
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [private, outbound]
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports: ['80:80', '443:443']
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 256m
+    networks: [private, outbound]
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+networks:
+  private:
+    internal: true
+  outbound:

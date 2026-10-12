@@ -1,0 +1,20 @@
+{
+  "mode": "enquiry_write",
+  "concurrent_users": 100,
+  "rounds": 5,
+  "requests": 100,
+  "failures": 0,
+  "status_codes": {
+    "201": 100
+  },
+  "duration_seconds": 0.62,
+  "requests_per_second": 161.27,
+  "latency_ms": {
+    "median": 204.43,
+    "p95": 334.41,
+    "p99": 512.33,
+    "max": 618.67
+  },
+  "decoded_bytes_received": 9500,
+  "scope": "HTTP only; excludes browser rendering, internet latency, production TLS and hosting limits."
+}

@@ -1,0 +1,20 @@
+{
+  "mode": "cold_page_journeys",
+  "concurrent_users": 100,
+  "rounds": 5,
+  "requests": 3000,
+  "failures": 0,
+  "status_codes": {
+    "200": 3000
+  },
+  "duration_seconds": 4.745,
+  "requests_per_second": 632.27,
+  "latency_ms": {
+    "median": 100.18,
+    "p95": 423.54,
+    "p99": 627.53,
+    "max": 1320.57
+  },
+  "decoded_bytes_received": 115393000,
+  "scope": "HTTP only; excludes browser rendering, internet latency, production TLS and hosting limits."
+}
